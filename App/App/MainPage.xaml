@@ -24,7 +24,7 @@
                      HorizontalOptions="CenterAndExpand"
                      VerticalOptions="CenterAndExpand">
             <ContentView.Effects>
-                <touch:TouchEff Completed="Handle_TouchCompleted" />
+                <touch:TouchEff />
             </ContentView.Effects>
 
             <Label FontSize="60" Text="CLICK ME" TextColor="Black" />
