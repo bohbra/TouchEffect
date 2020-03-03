@@ -9,6 +9,7 @@
 
     <StackLayout>
         <ContentView Padding="10,5"
+                     touch:TouchEff.Command="{Binding LoginCommand}"
                      touch:TouchEff.PressedAnimationDuration="500"
                      touch:TouchEff.PressedBackgroundColor="Red"
                      touch:TouchEff.PressedRotation="10"
@@ -22,6 +23,9 @@
                      touch:TouchEff.RippleCount="1"
                      HorizontalOptions="CenterAndExpand"
                      VerticalOptions="CenterAndExpand">
+            <ContentView.Effects>
+                <touch:TouchEff Completed="Handle_TouchCompleted" />
+            </ContentView.Effects>
 
             <Label FontSize="60" Text="CLICK ME" TextColor="Black" />
         </ContentView>

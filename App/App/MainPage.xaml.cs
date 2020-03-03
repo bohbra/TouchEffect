@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows.Input;
 using Xamarin.Forms;
 
 namespace App
@@ -13,9 +14,18 @@ namespace App
     [DesignTimeVisible(false)]
     public partial class MainPage : ContentPage
     {
+        
+
         public MainPage()
         {
             InitializeComponent();
+            BindingContext = new MainPageViewModel();
+        }
+
+       
+        private void Handle_TouchCompleted(VisualElement sender, TouchEffect.EventArgs.TouchCompletedEventArgs args)
+        {
+            //DisplayAlert("Thank you", ":)", "OK");
         }
     }
 }
