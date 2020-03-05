@@ -8,7 +8,7 @@
              mc:Ignorable="d">
 
     <StackLayout>
-        <ContentView Padding="10,5"
+        <ContentView Padding="200"
                      touch:TouchEff.Command="{Binding LoginCommand}"
                      touch:TouchEff.PressedBackgroundColor="Red"
                      touch:TouchEff.RegularBackgroundColor="Green"
@@ -18,7 +18,20 @@
                 <touch:TouchEff />
             </ContentView.Effects>
 
-            <Label FontSize="60" Text="CLICK ME" TextColor="Black" />
+            <Label FontSize="60"
+                   HorizontalOptions="Center"
+                   Text="CLICK ME"
+                   TextColor="White"
+                   VerticalOptions="Center">
+                <Label.Effects>
+                    <touch:TouchEff Completed="Handle_TouchCompleted" />
+                </Label.Effects>
+                <Label.Triggers>
+                    <Trigger TargetType="Label" Property="touch:TouchEff.State" Value="Pressed">
+                        <Setter Property="TextColor" Value="Red" />
+                    </Trigger>
+                </Label.Triggers>
+            </Label>
         </ContentView>
     </StackLayout>
 

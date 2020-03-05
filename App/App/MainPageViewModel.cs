@@ -14,7 +14,7 @@ namespace App
 
         private void OnLoginClick()
         {
-            Application.Current.MainPage = new Page2();
+            //Application.Current.MainPage = new Page2();
         }
     }
 }
