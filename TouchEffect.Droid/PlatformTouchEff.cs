@@ -12,8 +12,10 @@ using Android.Graphics.Drawables;
 using Android.Widget;
 using Color = Android.Graphics.Color;
 using Android.Content.Res;
-using Android.Content;
 using static System.Math;
+using Android.Views.Accessibility;
+using Android.Content;
+using AndroidOS = Android.OS;
 
 [assembly: ResolutionGroupName(nameof(TouchEffect))]
 [assembly: ExportEffect(typeof(PlatformTouchEff), nameof(TouchEff))]
@@ -24,36 +26,48 @@ namespace TouchEffect.Android
     {
         public static void Preserve() { }
 
-
+        private AccessibilityManager _accessibilityManager;
         private TouchEff _effect;
         private bool _isHoverSupported;
         private RippleDrawable _ripple;
         private FrameLayout _viewOverlay;
         private AView View => Control ?? Container;
+        private ViewGroup Group => Container ?? Control as ViewGroup;
         private float _startX;
         private float _startY;
-        private bool _canceled;
+        private Xamarin.Forms.Color _rippleColor;
+        private int _rippleRadius = -1;
+
+        internal bool IsCanceled { get; set; }
+
+        private bool IsAccessibilityMode =>
+            _accessibilityManager != null &&
+            _accessibilityManager.IsEnabled &&
+            _accessibilityManager.IsTouchExplorationEnabled;
 
         protected override void OnAttached()
         {
-            _effect = Element.GetTouchEff();
+            if (View == null)
+            {
+                return;
+            }
+            _effect = Element.PickTouchEff();
+            if (_effect.IsDisabled) return;
+
             _effect.Control = Element as VisualElement;
+
+            _accessibilityManager = View.Context.GetSystemService(Context.AccessibilityService) as AccessibilityManager;
+
             _effect.ForceUpdateState(false);
 
-            if (Container != null)
-            {
-                Container.Touch += OnTouch;
-            }
-            else if (Control != null)
-            {
-                Control.Touch += OnTouch;
-            }
+            View.Touch += OnTouch;
+            View.Click += OnClick;
 
-            if (_effect.NativeAnimation)
+            if (_effect.NativeAnimation && Group != null && AndroidOS.Build.VERSION.SdkInt >= AndroidOS.BuildVersionCodes.Lollipop)
             {
                 View.Clickable = true;
                 View.LongClickable = true;
-                _viewOverlay = new FrameLayout(Container.Context)
+                _viewOverlay = new FrameLayout(Group.Context)
                 {
                     LayoutParameters = new ViewGroup.LayoutParams(-1, -1),
                     Clickable = false,
@@ -61,41 +75,34 @@ namespace TouchEffect.Android
                 };
                 View.LayoutChange += LayoutChange;
 
-                _ripple = CreateRipple();
-                _ripple.Radius = (int)(View.Context.Resources.DisplayMetrics.Density * _effect.NativeAnimationRadius);
+                CreateRipple();
                 _viewOverlay.Background = _ripple;
-                if (Container != null)
-                {
-                    Container.AddView(_viewOverlay);
-                }
+                Group.AddView(_viewOverlay);
                 _viewOverlay.BringToFront();
             }
         }
 
         protected override void OnDetached()
         {
+            if (_effect.Control == null) return;
             try
             {
+                _accessibilityManager = null;
                 _effect.Control = null;
                 _effect = null;
 
-                if (Container != null)
+                if (View != null)
                 {
-                    Container.LayoutChange -= LayoutChange;
-                    Container.Touch -= OnTouch;
-                }
-
-                if (Control != null)
-                {
-                    Control.LayoutChange -= LayoutChange;
-                    Control.Touch -= OnTouch;
+                    View.LayoutChange -= LayoutChange;
+                    View.Touch -= OnTouch;
+                    View.Click -= OnClick;
                 }
 
                 if (_viewOverlay != null)
                 {
-                    if (Container != null)
+                    if (Group != null)
                     {
-                        Container.RemoveView(_viewOverlay);
+                        Group.RemoveView(_viewOverlay);
                     }
 
                     _viewOverlay.Pressed = false;
@@ -113,29 +120,34 @@ namespace TouchEffect.Android
 
         private void OnTouch(object sender, AView.TouchEventArgs e)
         {
-            e.Handled = true;
+            if (_effect.IsDisabled) return;
 
+            if (IsAccessibilityMode)
+            {
+                return;
+            }
+            e.Handled = true;
             switch (e.Event.ActionMasked)
             {
                 case MotionEventActions.Down:
-                    _canceled = false;
+                    IsCanceled = false;
                     _startX = e.Event.GetX();
                     _startY = e.Event.GetY();
-                    Element.GetTouchEff().HandleTouch(TouchStatus.Started);
+                    _effect.HandleTouch(TouchStatus.Started);
                     StartRipple(e.Event.GetX(), e.Event.GetY());
                     if (_effect.DisallowTouchThreshold > 0)
                     {
-                        Container.Parent?.RequestDisallowInterceptTouchEvent(true);
+                        Group.Parent?.RequestDisallowInterceptTouchEvent(true);
                     }
                     break;
                 case MotionEventActions.Up:
-                    HandleEnd(Element.GetTouchEff().Status == TouchStatus.Started ? TouchStatus.Completed : TouchStatus.Canceled);
+                    HandleEnd(_effect.Status == TouchStatus.Started ? TouchStatus.Completed : TouchStatus.Canceled);
                     break;
                 case MotionEventActions.Cancel:
                     HandleEnd(TouchStatus.Canceled);
                     break;
                 case MotionEventActions.Move:
-                    if (_canceled)
+                    if (IsCanceled)
                     {
                         return;
                     }
@@ -146,7 +158,6 @@ namespace TouchEffect.Android
                     if (disallowTouchThreshold > 0 && maxDiff > disallowTouchThreshold)
                     {
                         HandleEnd(TouchStatus.Canceled);
-                        _canceled = true;
                         return;
                     }
                     var view = sender as AView;
@@ -160,9 +171,9 @@ namespace TouchEffect.Android
                         _effect.HandleHover(status == TouchStatus.Started ? HoverStatus.Entered : HoverStatus.Exited);
                     }
 
-                    if (Element.GetTouchEff().Status != status)
+                    if (_effect.Status != status)
                     {
-                        Element.GetTouchEff().HandleTouch(status);
+                        _effect.HandleTouch(status);
                         if (status == TouchStatus.Started)
                             StartRipple(e.Event.GetX(), e.Event.GetY());
                         if (status == TouchStatus.Canceled)
@@ -171,11 +182,11 @@ namespace TouchEffect.Android
                     break;
                 case MotionEventActions.HoverEnter:
                     _isHoverSupported = true;
-                    Element.GetTouchEff().HandleHover(HoverStatus.Entered);
+                    _effect.HandleHover(HoverStatus.Entered);
                     break;
                 case MotionEventActions.HoverExit:
                     _isHoverSupported = true;
-                    Element.GetTouchEff().HandleHover(HoverStatus.Exited);
+                    _effect.HandleHover(HoverStatus.Exited);
                     break;
                 default:
                     e.Handled = false;
@@ -183,70 +194,91 @@ namespace TouchEffect.Android
             }
         }
 
-        private void HandleEnd(TouchStatus status)
+        private void OnClick(object sender, System.EventArgs args)
         {
-            if (_canceled)
+            if (_effect.IsDisabled) return;
+
+            if (!IsAccessibilityMode)
             {
                 return;
             }
+            IsCanceled = false;
+            HandleEnd(TouchStatus.Completed);
+        }
+
+        private void HandleEnd(TouchStatus status)
+        {
+            if (IsCanceled)
+            {
+                return;
+            }
+            IsCanceled = true;
             if (_effect.DisallowTouchThreshold > 0)
             {
-                Container.Parent?.RequestDisallowInterceptTouchEvent(false);
+                Group.Parent?.RequestDisallowInterceptTouchEvent(false);
             }
-            Element.GetTouchEff().HandleTouch(status);
+            _effect.HandleTouch(status);
             EndRipple();
         }
 
-        private bool StartRipple(float x, float y)
+        private void StartRipple(float x, float y)
         {
-            if (_effect.NativeAnimation && _viewOverlay.Background is RippleDrawable)
+            if (_effect.IsDisabled) return;
+
+            if (_effect.CanExecute && _effect.NativeAnimation && _viewOverlay.Background is RippleDrawable)
             {
+                UpdateRipple();
                 _viewOverlay.BringToFront();
                 _ripple.SetHotspot(x, y);
                 _viewOverlay.Pressed = true;
-                return true;
             }
-            return false;
         }
 
-        private bool EndRipple()
+        private void EndRipple()
         {
-            if (_viewOverlay != null && _viewOverlay.Pressed)
+            if (_effect.IsDisabled) return;
+
+            if (_viewOverlay?.Pressed ?? false)
             {
                 _viewOverlay.Pressed = false;
-                return true;
             }
-            return false;
         }
 
-        private RippleDrawable CreateRipple()
+        private void CreateRipple()
         {
-            if (Element is Layout)
-            {
-                var mask = new ColorDrawable(Color.White);
-                return new RippleDrawable(GetColorStateList(), null, mask);
-            }
-
-            var background = (Control ?? Container).Background;
-            if (background == null)
-            {
-                var mask = new ColorDrawable(Color.White);
-                return new RippleDrawable(GetColorStateList(), null, mask);
-            }
+            var background = View?.Background;
 
             if (background is RippleDrawable)
             {
-                var ripple = (RippleDrawable)background.GetConstantState().NewDrawable();
-                ripple.SetColor(GetColorStateList());
-                return ripple;
+                _ripple = (RippleDrawable)background.GetConstantState().NewDrawable();
+                return;
             }
-            return new RippleDrawable(GetColorStateList(), background, null);
+            else
+            {
+                var noBackground = Element is Layout || background == null;
+                _ripple = new RippleDrawable(GetColorStateList(), noBackground ? null : background, noBackground ? new ColorDrawable(Color.White) : null);
+            }
+            UpdateRipple();
+        }
+
+        private void UpdateRipple()
+        {
+            if (_effect.IsDisabled) return;
+
+            if (_effect.NativeAnimationColor == _rippleColor && _effect.NativeAnimationRadius == _rippleRadius)
+            {
+                return;
+            }
+            _rippleColor = _effect.NativeAnimationColor;
+            _rippleRadius = _effect.NativeAnimationRadius;
+            _ripple.SetColor(GetColorStateList());
+            _ripple.Radius = (int)(View.Context.Resources.DisplayMetrics.Density * _effect.NativeAnimationRadius);
         }
 
         private ColorStateList GetColorStateList()
         {
             int color;
-            var defaultcolor = TouchEff.GetNativeAnimationColor(Element);
+            var defaultcolor = _effect.NativeAnimationColor;
             if (defaultcolor != Xamarin.Forms.Color.Default)
                 color = defaultcolor.ToAndroid();
             else
@@ -260,7 +292,7 @@ namespace TouchEffect.Android
         private void LayoutChange(object sender, AView.LayoutChangeEventArgs e)
         {
             var group = (ViewGroup)sender;
-            if (group == null || (Container as IVisualElementRenderer)?.Element == null) return;
+            if (group == null || (Group as IVisualElementRenderer)?.Element == null) return;
             _viewOverlay.Right = group.Width;
             _viewOverlay.Bottom = group.Height;
         }
